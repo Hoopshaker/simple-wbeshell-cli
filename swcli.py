@@ -1,4 +1,4 @@
-#! /usr/bin/python3
+#!/usr/bin/python3
 import requests
 import logging
 import readline
@@ -40,7 +40,7 @@ def execute_command(url, method=METHOD_POST,params={}, headers={}, data={}):
 
         # Log the HTTP status code
         logging.debug(f"Received HTTP status code: {response.status_code}")
-        logging.info(f"Received HTML content : {response.text}")
+        logging.debug(f"Received HTML content : {response.text}")
 
         # Return the HTTP status code and the content of the HTML response
         return response.status_code, response.text
@@ -50,26 +50,40 @@ def execute_command(url, method=METHOD_POST,params={}, headers={}, data={}):
         logging.error(f"An error occurred: {e}")
         raise
 
-def main(url):
+def extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return,bs4_selector):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    if str_valid_command_return in html_content:
+        selector_tags = soup.select(bs4_selector)
+        if selector_tags and len(selector_tags)>0:
+            print(f"{selector_tags[0].get_text().strip()}")
+            if len(selector_tags)>1:
+                print(f"->Selector {bs4_selector} returned multiple lines, concider choosing a more discriminating selector to retuen only one result.")
+        else:
+            print("Success: No valid tag found.")
+        
+    elif str_wrong_command_return in html_content:
+       print("Command forbidden")
+
+def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="html"):
     """
     Main function to handle user input and process commands.
     """
     command_history = []
     command_index = 0
+    
+    # Parameters to process cmd returns
+    str_valid_command_return=str_valid_command_return
+    str_wrong_command_return=str_wrong_command_return
+    bs4_selector=bs4_selector
+
+
+
 
     while True:
         try:
             # Display the prompt
             command = input(f"command [{url}]: ")
 
-            # Handle up arrow key for command history
-            if command == "":
-                if command_index > 0:
-                    command_index -= 1
-                    command = command_history[command_index]
-                    print(f"command [{url}]: {command}")
-                else:
-                    continue
 
             # Exit condition
             if command.lower() == "exit":
@@ -85,24 +99,19 @@ def main(url):
             http_response, html_content = execute_command(url, data={"command": command})
 
             if html_content:
+                
+                extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return,bs4_selector)
                 soup = BeautifulSoup(html_content, 'html.parser')
-
-                if "blue_boy_typing_nothought.gif" in html_content:
-                    h2_tag = soup.find('h2')
-                    if h2_tag:
-                        print(f"{h2_tag.get_text()}")
-                    else:
-                        print("Success: No h2 tag found.")
-                    
-                elif "Are you a hacker?" in html_content:
-                   print("Command forbidden")
-                else:
-                    print("Command processed, but no specific condition met.")
+            else:
+                print("Command processed, but no specific condition met.")
 
         except KeyboardInterrupt:
             break
 
 if __name__ == "__main__":
-    url = input("Enter the URL: ")
-    main(url)
+    str_valid_command_return="blue_boy_typing_nothought.gif"
+    str_wrong_command_return="Are you a hacker?"
+    bs4_selector='h2'
 
+    url = input("Enter the URL:")
+    main(url, str_valid_command_return, str_wrong_command_return, bs4_selector)
