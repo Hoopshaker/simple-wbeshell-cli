@@ -118,7 +118,7 @@ def populate_template(cmd, temple_dict):
         >>> cmd = "example_command"
         >>> temple_dict = {
         ...     "key1": "This is a %cmd%",
-        ...     "key2": "Another %cmd here",
+        ...     "key2": "Another %cmd% here",
         ...     "key3": "No command here"
         ... }
         >>> populate_template(cmd, temple_dict)
