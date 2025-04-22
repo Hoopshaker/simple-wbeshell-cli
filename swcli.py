@@ -127,12 +127,16 @@ def extract_result_from_command_return(html_content, str_valid_command_return, s
         valid_result = True
 
         # Use the BeautifulSoup selector to find the command result
-        selector_tags = soup.select(bs4_selector)
+        # if selector is None or empty string, select all document
+        if not (type(bs4_selector)==type("") and len(bs4_selector)==0):
+            selector_tag = soup.select_one(bs4_selector)
+        else:
+            selector_tag = soup
 
-        # Check if any tags were found and if there is at least one tag
-        if selector_tags and len(selector_tags) > 0:
-            # Get the text from the first tag and strip any surrounding whitespace
-            cmd_result = selector_tags[0].get_text().strip()
+        # Check if any tag was found
+        if selector_tag:
+            # Get the text from the tag and strip any surrounding whitespace
+            cmd_result = selector_tag.get_text().strip()
 
             if regex is not None:
                 try:
@@ -148,6 +152,7 @@ def extract_result_from_command_return(html_content, str_valid_command_return, s
 
             if rm_after is not None:
                 cmd_result = remove_content_after_split(cmd_result, rm_after)
+
             if rm_before is not None:
                 cmd_result = remove_content_before_split(cmd_result, rm_before)
             
@@ -155,10 +160,6 @@ def extract_result_from_command_return(html_content, str_valid_command_return, s
             for str_to_remove in rm:
                 cmd_result=" ".join(cmd_result.split(str_to_remove))
                 
-
-            # Check if multiple tags were found and print a warning message
-            if len(selector_tags) > 1:
-                print(f"->Selector {bs4_selector} returned multiple lines, consider choosing a more discriminating selector to return only one result.")
         else:
             # Print a message if no valid tag was found
             print(f"Success: No valid tag found for {bs4_selector}")
